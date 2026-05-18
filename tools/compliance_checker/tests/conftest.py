@@ -5,11 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from pxr import Sdf, Usd
+from pxr import Sdf, Usd, UsdValidation
 
 if TYPE_CHECKING:
-    from compliance_checker.checks.base import BaseCheck
-    from compliance_checker.report import Violation
+    pass
+
+
+import usdRosValidators  # noqa: F401
 
 
 # ------------------------------------------------------------------ #
@@ -18,12 +20,7 @@ if TYPE_CHECKING:
 
 
 def make_stage(usda: str) -> Usd.Stage:
-    """Return an in-memory USD stage loaded from a USDA string.
-
-    Uses an anonymous SdfLayer so no files are written to disk.
-    The payload warning printed to stderr when a payload target does
-    not exist is expected in tests that exercise payload detection.
-    """
+    """Return an in-memory USD stage loaded from a USDA string."""
     layer = Sdf.Layer.CreateAnonymous(".usda")
     layer.ImportFromString(usda)
     return Usd.Stage.Open(layer)
@@ -31,11 +28,7 @@ def make_stage(usda: str) -> Usd.Stage:
 
 @pytest.fixture
 def tmp_usda(tmp_path):
-    """Fixture: write USDA content to a temp file, return path string.
-
-    Use this only when the check under test requires real file-system
-    references (e.g. external reference path checks).
-    """
+    """Fixture: write USDA content to a temp file, return path string."""
 
     def _write(content: str, name: str = "test.usda") -> str:
         p = tmp_path / name
@@ -49,28 +42,40 @@ def tmp_usda(tmp_path):
 # Check runner helpers                                                  #
 # ------------------------------------------------------------------ #
 
+_registry = UsdValidation.ValidationRegistry()
 
-def run_check(
+
+def run_validators(
     stage: Usd.Stage,
-    *check_classes: type[BaseCheck],
-) -> list[Violation]:
-    """Run one or more check classes against *stage*, return all violations."""
-    from compliance_checker.checker import ComplianceChecker
-
-    checks = [cls() for cls in check_classes]
-    return ComplianceChecker(stage, checks).run().violations
-
-
-def ids(violations: list[Violation]) -> set[str]:
-    """Return the set of check_ids from a violation list."""
-    return {v.check_id for v in violations}
+    *validator_names: str,
+) -> list[UsdValidation.ValidationError]:
+    """Run named validators against *stage*, return all errors."""
+    validators = [_registry.GetOrLoadValidatorByName(n) for n in validator_names]
+    ctx = UsdValidation.ValidationContext(validators)
+    return list(ctx.Validate(stage))
 
 
-def has(violations: list[Violation], check_id: str) -> bool:
-    """Return True when at least one violation carries *check_id*."""
-    return check_id in ids(violations)
+def run_keyword(
+    stage: Usd.Stage,
+    keyword: str,
+) -> list[UsdValidation.ValidationError]:
+    """Run all validators matching *keyword* against *stage*."""
+    metas = _registry.GetValidatorMetadataForKeyword(keyword)
+    validators = [_registry.GetOrLoadValidatorByName(m.name) for m in metas]
+    ctx = UsdValidation.ValidationContext(validators)
+    return list(ctx.Validate(stage))
 
 
-def none_with(violations: list[Violation], check_id: str) -> bool:
-    """Return True when no violation carries *check_id*."""
-    return check_id not in ids(violations)
+def ids(errors: list[UsdValidation.ValidationError]) -> set[str]:
+    """Return the set of error names from an error list."""
+    return {e.GetName() for e in errors}
+
+
+def has(errors: list[UsdValidation.ValidationError], error_name: str) -> bool:
+    """Return True when at least one error carries *error_name*."""
+    return error_name in ids(errors)
+
+
+def none_with(errors: list[UsdValidation.ValidationError], error_name: str) -> bool:
+    """Return True when no error carries *error_name*."""
+    return error_name not in ids(errors)

@@ -1,6 +1,10 @@
-"""REP-0158 OpenUSD Simulation Asset Compliance Checker."""
+"""REP-0158 OpenUSD Simulation Asset Compliance Checker.
 
-from .checker import ComplianceChecker
-from .report import Report, Severity, Violation
+Built on the UsdValidation framework. Importing this package eagerly
+imports ``usdRosValidators`` so the bundled plugin manifest is registered
+with ``Plug.Registry()`` before any code instantiates
+``UsdValidation.ValidationRegistry`` (whose singleton constructor snapshots
+plugin metadata once at first access).
+"""
 
-__all__ = ["ComplianceChecker", "Report", "Severity", "Violation"]
+import usdRosValidators  # noqa: F401
